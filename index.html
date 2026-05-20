@@ -213,7 +213,13 @@
 <footer>La Petite Pause © 2026 — Dashboard mis à jour automatiquement depuis Google Sheets</footer>
 
 <script>
-const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTqIj_stf_7PPHxN0Kz0FsXeoL3RUNHJz5EWp2hkkFQE9gQcvUN6fHWj3FJcp8ww4YrhwUe7OBFja4H/pub?gid=432887803&single=true&output=csv&t=' + Date.now();
+// ─── CONFIGURATION ────────────────────────────────────────────────────────────
+// Étape 1 : laissez APPS_SCRIPT_URL vide jusqu'à déploiement Apps Script
+// Étape 2 : collez ici l'URL fournie après déploiement (voir instructions en cas d'erreur)
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyDqicU_NwYNbyiC78nsWxqYeXBC0bjH05u2P4bAorxqhPTmpiZ80aZ53aguq0y__2E/exec';
+
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTqIj_stf_7PPHxN0Kz0FsXeoL3RUNHJz5EWp2hkkFQE9gQcvUN6fHWj3FJcp8ww4YrhwUe7OBFja4H/pub?gid=432887803&single=true&output=csv';
+// ─────────────────────────────────────────────────────────────────────────────
 
 const COLORS = {
   ECKBOLSHEIM:  '#2D6A4F',
@@ -227,25 +233,63 @@ const PRODUCT_COLORS = ['#2D6A4F','#52B788','#74C69D','#F4A261','#E76F51'];
 let rawData = [];
 let charts = {};
 
-const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTqIj_stf_7PPHxN0Kz0FsXeoL3RUNHJz5EWp2hkkFQE9gQcvUN6fHWj3FJcp8ww4YrhwUe7OBFja4H/pub?gid=432887803&single=true&output=csv';
-const PROXIES = [
-  url => url,  // direct
-  url => 'https://corsproxy.io/?' + encodeURIComponent(url),
-  url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
-];
-
 async function fetchCSV() {
-  const url = SHEET_URL + '&t=' + Date.now();
-  for (const proxy of PROXIES) {
+  const urlWithTs = SHEET_URL + '&t=' + Date.now();
+
+  // Priorité 1 : Google Apps Script (résout définitivement le problème CORS)
+  if (APPS_SCRIPT_URL) {
     try {
-      const res = await fetch(proxy(url), { signal: AbortSignal.timeout(8000) });
+      const res = await fetch(APPS_SCRIPT_URL + '?t=' + Date.now(), { signal: AbortSignal.timeout(10000) });
+      if (res.ok) {
+        const text = await res.text();
+        if (text.includes(',') && text.length > 50) return text;
+      }
+    } catch(e) {}
+  }
+
+  // Priorité 2 : accès direct (fonctionne si ouvert depuis un serveur https)
+  try {
+    const res = await fetch(urlWithTs, { signal: AbortSignal.timeout(6000) });
+    if (res.ok) {
+      const text = await res.text();
+      if (text.includes(',') && text.length > 50) return text;
+    }
+  } catch(e) {}
+
+  // Priorité 3 : proxies CORS (tentative depuis file://)
+  const proxies = [
+    u => 'https://corsproxy.io/?' + u,
+    u => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+    u => 'https://thingproxy.freeboard.io/fetch/' + u,
+    u => 'https://proxy.cors.sh/' + u,
+  ];
+  for (const p of proxies) {
+    try {
+      const res = await fetch(p(urlWithTs), { signal: AbortSignal.timeout(8000) });
       if (!res.ok) continue;
       const text = await res.text();
       if (text.includes(',') && text.length > 50) return text;
     } catch(e) { continue; }
   }
+
   throw new Error('Tous les proxies ont échoué');
 }
+
+const SCRIPT_CODE = `function doGet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName('DATA');
+  var data = sheet.getDataRange().getValues();
+  var csv = data.map(function(row) {
+    return row.map(function(cell) {
+      var s = String(cell);
+      return (s.indexOf(',') !== -1 || s.indexOf('"') !== -1)
+        ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(',');
+  }).join('\\n');
+  return ContentService
+    .createTextOutput(csv)
+    .setMimeType(ContentService.MimeType.TEXT);
+}`;
 
 async function loadData() {
   try {
@@ -258,14 +302,46 @@ async function loadData() {
   } catch(e) {
     if (rawData.length === 0) {
       document.getElementById('content').innerHTML = `
-        <div class="loading">
-          <span style="font-size:32px">⚠️</span>
-          <strong>Impossible de charger les données</strong>
-          <span style="font-size:13px;color:#888;max-width:400px;text-align:center">
-            Vérifiez que l'onglet DATA de votre Google Sheet est bien publié sur le web<br>
-            (Fichier → Partager → Publier sur le web → DATA → CSV)
-          </span>
-          <button class="btn-refresh" onclick="loadData()" style="margin-top:8px">↻ Réessayer</button>
+        <div style="max-width:700px;margin:40px auto;font-family:inherit">
+          <div style="background:#FFF3CD;border:1px solid #FBBF24;border-radius:12px;padding:24px;margin-bottom:20px">
+            <div style="font-size:18px;font-weight:700;color:#7A5C00;margin-bottom:8px">⚠️ Impossible de charger les données</div>
+            <div style="font-size:13px;color:#555">
+              Ce fichier est ouvert en local (<code>file://</code>) — Chrome bloque les requêtes vers des sites externes.
+              La solution est de déployer un <strong>Google Apps Script</strong> dans votre Google Sheet (5 minutes, une seule fois).
+            </div>
+          </div>
+
+          <div style="background:#fff;border:1px solid #D8EDE1;border-radius:12px;padding:24px;margin-bottom:16px">
+            <div style="font-weight:700;color:#2D6A4F;margin-bottom:12px">✅ Solution recommandée — Google Apps Script</div>
+            <ol style="font-size:13px;color:#333;line-height:2;padding-left:20px">
+              <li>Ouvrez votre Google Sheet → menu <strong>Extensions → Apps Script</strong></li>
+              <li>Supprimez le code existant et collez le code ci-dessous</li>
+              <li>Cliquez <strong>Déployer → Nouveau déploiement → Application Web</strong></li>
+              <li>Accès : <strong>"Tout le monde"</strong> → cliquez <strong>Déployer</strong> → copiez l'URL</li>
+              <li>Collez l'URL dans ce fichier HTML à la ligne : <code>const APPS_SCRIPT_URL = '...';</code></li>
+            </ol>
+            <div style="margin-top:12px">
+              <div style="font-size:11px;color:#888;margin-bottom:6px;font-weight:600">CODE À COLLER DANS APPS SCRIPT :</div>
+              <pre id="script-code" style="background:#1A2E22;color:#B7E4C7;padding:16px;border-radius:8px;font-size:12px;overflow-x:auto;white-space:pre;line-height:1.6">${SCRIPT_CODE.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</pre>
+              <button onclick="navigator.clipboard.writeText(SCRIPT_CODE).then(()=>{this.textContent='✅ Copié !';setTimeout(()=>this.textContent='📋 Copier le code',2000)})"
+                style="margin-top:8px;background:#2D6A4F;color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:12px;cursor:pointer;font-weight:600">
+                📋 Copier le code
+              </button>
+            </div>
+          </div>
+
+          <div style="background:#F0F4F1;border:1px solid #D8EDE1;border-radius:12px;padding:20px;margin-bottom:16px">
+            <div style="font-weight:700;color:#444;margin-bottom:8px">🖥️ Alternative rapide — Serveur local</div>
+            <div style="font-size:13px;color:#555;margin-bottom:10px">
+              Si Python est installé, ouvrez un terminal dans le dossier contenant ce fichier et exécutez :
+            </div>
+            <pre style="background:#1A2E22;color:#B7E4C7;padding:12px 16px;border-radius:8px;font-size:13px">python -m http.server 8080</pre>
+            <div style="font-size:12px;color:#888;margin-top:8px">Puis ouvrez dans Chrome : <code>http://localhost:8080/dashboard_lapetitepause.html</code></div>
+          </div>
+
+          <div style="text-align:center">
+            <button class="btn-refresh" onclick="loadData()" style="margin-top:4px">↻ Réessayer</button>
+          </div>
         </div>`;
     }
     document.getElementById('last-update').textContent = 'Erreur de connexion';
