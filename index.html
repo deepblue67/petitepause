@@ -67,6 +67,19 @@
       background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px;
     }
     .filter-group select:focus { border-color: var(--green-mid); }
+    .filter-group input[type="date"] {
+      border: 1.5px solid var(--border); border-radius: 8px; padding: 7px 10px;
+      font-size: 13px; font-family: inherit; color: var(--text); background: #fff;
+      cursor: pointer; outline: none; transition: border-color .2s;
+    }
+    .filter-group input[type="date"]:focus { border-color: var(--green-mid); }
+    .date-arrow { font-size: 14px; color: var(--text-light); }
+    .btn-reset-dates {
+      background: none; border: 1.5px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; font-size: 12px; color: var(--text-light); cursor: pointer;
+      transition: all .2s;
+    }
+    .btn-reset-dates:hover { border-color: var(--green-mid); color: var(--green-dark); }
     .filter-sep { width: 1px; height: 28px; background: var(--border); }
 
     /* MAIN */
@@ -197,10 +210,12 @@
     </select>
   </div>
   <div class="filter-group">
-    <span class="filter-label">Période</span>
-    <select id="filter-periode" onchange="applyFilters()">
-      <option value="Tous">Toute la période</option>
-    </select>
+    <span class="filter-label">Du</span>
+    <input type="date" id="filter-date-start" onchange="applyFilters()">
+    <span class="date-arrow">→</span>
+    <span class="filter-label">Au</span>
+    <input type="date" id="filter-date-end" onchange="applyFilters()">
+    <button class="btn-reset-dates" onclick="resetDates()" title="Toute la période">✕</button>
   </div>
 </div>
 
@@ -298,22 +313,23 @@ const SCRIPT_CODE = `function doGet(e) {
 async function loadData() {
   try {
     // Sauvegarder les filtres actifs avant rechargement
-    const savedMag  = document.getElementById('filter-magasin')?.value  || 'Tous';
-    const savedProd = document.getElementById('filter-produit')?.value  || 'Tous';
-    const savedPer  = document.getElementById('filter-periode')?.value  || 'Tous';
+    const savedMag       = document.getElementById('filter-magasin')?.value || 'Tous';
+    const savedProd      = document.getElementById('filter-produit')?.value || 'Tous';
+    const savedDateStart = document.getElementById('filter-date-start')?.value || '';
+    const savedDateEnd   = document.getElementById('filter-date-end')?.value   || '';
 
     document.getElementById('last-update').textContent = 'Actualisation…';
     const text = await fetchCSV();
     rawData = parseCSV(text);
     populateFilters();
 
-    // Restaurer les filtres si les valeurs existent toujours
+    // Restaurer les filtres
     const selMag  = document.getElementById('filter-magasin');
     const selProd = document.getElementById('filter-produit');
-    const selPer  = document.getElementById('filter-periode');
     if ([...selMag.options].some(o => o.value === savedMag))   selMag.value  = savedMag;
     if ([...selProd.options].some(o => o.value === savedProd)) selProd.value = savedProd;
-    if ([...selPer.options].some(o => o.value === savedPer))   selPer.value  = savedPer;
+    if (savedDateStart) document.getElementById('filter-date-start').value = savedDateStart;
+    if (savedDateEnd)   document.getElementById('filter-date-end').value   = savedDateEnd;
 
     applyFilters();
     document.getElementById('last-update').textContent = 'Mis à jour : ' + new Date().toLocaleTimeString('fr-FR');
@@ -382,39 +398,58 @@ function parseCSV(text) {
   }).filter(r => r.Franchise && r.Produit);
 }
 
+function toIso(dateObj) {
+  return dateObj.toISOString().slice(0, 10);
+}
+
 function populateFilters() {
   const magasins = [...new Set(rawData.map(r => r.Franchise))].sort();
   const produits = [...new Set(rawData.map(r => r.Produit))].sort();
-  const periodes = [...new Set(rawData.map(r => {
-    const d = new Date(r.Date);
-    return isNaN(d) ? null : d.toLocaleDateString('fr-FR', {month:'long', year:'numeric'});
-  }).filter(Boolean))];
 
-  const selMag = document.getElementById('filter-magasin');
+  const selMag  = document.getElementById('filter-magasin');
   const selProd = document.getElementById('filter-produit');
-  const selPer = document.getElementById('filter-periode');
-
-  selMag.innerHTML = '<option value="Tous">Tous les magasins</option>' +
+  selMag.innerHTML  = '<option value="Tous">Tous les magasins</option>' +
     magasins.map(m => `<option value="${m}">${m}</option>`).join('');
   selProd.innerHTML = '<option value="Tous">Tous les produits</option>' +
     produits.map(p => `<option value="${p}">${p}</option>`).join('');
-  selPer.innerHTML = '<option value="Tous">Toute la période</option>' +
-    periodes.map(p => `<option value="${p}">${p}</option>`).join('');
+
+  // Bornes min/max issues des données
+  const dates = rawData.map(r => new Date(r.Date)).filter(d => !isNaN(d));
+  if (dates.length) {
+    const minDate = toIso(new Date(Math.min(...dates)));
+    const maxDate = toIso(new Date(Math.max(...dates)));
+    const inStart = document.getElementById('filter-date-start');
+    const inEnd   = document.getElementById('filter-date-end');
+    inStart.min = minDate;  inStart.max = maxDate;
+    inEnd.min   = minDate;  inEnd.max   = maxDate;
+    // Ne réinitialise les valeurs que si elles sont vides
+    if (!inStart.value) inStart.value = minDate;
+    if (!inEnd.value)   inEnd.value   = maxDate;
+  }
+}
+
+function resetDates() {
+  const dates = rawData.map(r => new Date(r.Date)).filter(d => !isNaN(d));
+  if (!dates.length) return;
+  document.getElementById('filter-date-start').value = toIso(new Date(Math.min(...dates)));
+  document.getElementById('filter-date-end').value   = toIso(new Date(Math.max(...dates)));
+  applyFilters();
 }
 
 function applyFilters() {
-  const mag  = document.getElementById('filter-magasin').value;
-  const prod = document.getElementById('filter-produit').value;
-  const per  = document.getElementById('filter-periode').value;
+  const mag       = document.getElementById('filter-magasin').value;
+  const prod      = document.getElementById('filter-produit').value;
+  const dateStart = document.getElementById('filter-date-start').value;
+  const dateEnd   = document.getElementById('filter-date-end').value;
+  const tsStart   = dateStart ? new Date(dateStart).getTime() : null;
+  const tsEnd     = dateEnd   ? new Date(dateEnd).getTime() + 86399999 : null;
 
   let data = rawData.filter(r => {
     if (mag  !== 'Tous' && r.Franchise !== mag)  return false;
     if (prod !== 'Tous' && r.Produit   !== prod) return false;
-    if (per  !== 'Tous') {
-      const d = new Date(r.Date);
-      const label = isNaN(d) ? '' : d.toLocaleDateString('fr-FR', {month:'long',year:'numeric'});
-      if (label !== per) return false;
-    }
+    const ts = new Date(r.Date).getTime();
+    if (tsStart && ts < tsStart) return false;
+    if (tsEnd   && ts > tsEnd)   return false;
     return true;
   });
 
