@@ -218,7 +218,7 @@
 // Étape 2 : collez ici l'URL fournie après déploiement (voir instructions en cas d'erreur)
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyDqicU_NwYNbyiC78nsWxqYeXBC0bjH05u2P4bAorxqhPTmpiZ80aZ53aguq0y__2E/exec';
 
-const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTqIj_stf_7PPHxN0Kz0FsXeoL3RUNHJz5EWp2hkkFQE9gQcvUN6fHWj3FJcp8ww4YrhwUe7OBFja4H/pub?gid=432887803&single=true&output=csv';
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1bHK0dRN5A_ELfqCTOFa5fpdSZlqAO9P-VwUb06gZLLc/gviz/tq?tqx=out:csv&sheet=DATA';
 // ─────────────────────────────────────────────────────────────────────────────
 
 const COLORS = {
@@ -275,20 +275,24 @@ async function fetchCSV() {
   throw new Error('Tous les proxies ont échoué');
 }
 
-const SCRIPT_CODE = `function doGet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var sheet = ss.getSheetByName('DATA');
-  var data = sheet.getDataRange().getValues();
-  var csv = data.map(function(row) {
-    return row.map(function(cell) {
-      var s = String(cell);
-      return (s.indexOf(',') !== -1 || s.indexOf('"') !== -1)
-        ? '"' + s.replace(/"/g, '""') + '"' : s;
-    }).join(',');
-  }).join('\\n');
-  return ContentService
-    .createTextOutput(csv)
-    .setMimeType(ContentService.MimeType.TEXT);
+const SCRIPT_CODE = `function doGet(e) {
+  var ss = SpreadsheetApp.openById('1bHK0dRN5A_ELfqCTOFa5fpdSZlqAO9P-VwUb06gZLLc');
+  if (e && e.parameter && e.parameter.format === 'csv') {
+    var sheet = ss.getSheetByName('DATA');
+    var data = sheet.getDataRange().getValues();
+    var csv = data.map(function(row) {
+      return row.map(function(cell) {
+        var s = String(cell);
+        return (s.indexOf(',') !== -1 || s.indexOf('"') !== -1)
+          ? '"' + s.replace(/"/g, '""') + '"' : s;
+      }).join(',');
+    }).join('\\n');
+    return ContentService
+      .createTextOutput(csv)
+      .setMimeType(ContentService.MimeType.TEXT);
+  }
+  return HtmlService.createHtmlOutputFromFile('dashboard')
+    .setTitle('La Petite Pause Dashboard');
 }`;
 
 async function loadData() {
