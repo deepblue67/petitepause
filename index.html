@@ -399,7 +399,20 @@ function parseCSV(text) {
 }
 
 function toIso(dateObj) {
-  return dateObj.toISOString().slice(0, 10);
+  const y = dateObj.getFullYear();
+  const m = String(dateObj.getMonth()+1).padStart(2,'0');
+  const d = String(dateObj.getDate()).padStart(2,'0');
+  return `${y}-${m}-${d}`;
+}
+
+function initDateFilters() {
+  const today = new Date();
+  const day   = today.getDay();
+  const diffMonday = (day === 0) ? -6 : 1 - day;
+  const monday = new Date(today); monday.setDate(today.getDate() + diffMonday);
+  const friday = new Date(monday); friday.setDate(monday.getDate() + 4);
+  document.getElementById('filter-date-start').value = toIso(monday);
+  document.getElementById('filter-date-end').value   = toIso(friday);
 }
 
 function populateFilters() {
@@ -737,7 +750,7 @@ function destroyChart(id) {
   if (charts[id]) { charts[id].destroy(); delete charts[id]; }
 }
 
-// Auto-refresh toutes les 5 minutes
+initDateFilters();
 loadData();
 // Mise à jour automatique désactivée — utilisez le bouton Actualiser
 </script>
