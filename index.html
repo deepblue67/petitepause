@@ -293,10 +293,24 @@ const SCRIPT_CODE = `function doGet() {
 
 async function loadData() {
   try {
+    // Sauvegarder les filtres actifs avant rechargement
+    const savedMag  = document.getElementById('filter-magasin')?.value  || 'Tous';
+    const savedProd = document.getElementById('filter-produit')?.value  || 'Tous';
+    const savedPer  = document.getElementById('filter-periode')?.value  || 'Tous';
+
     document.getElementById('last-update').textContent = 'Actualisation…';
     const text = await fetchCSV();
     rawData = parseCSV(text);
     populateFilters();
+
+    // Restaurer les filtres si les valeurs existent toujours
+    const selMag  = document.getElementById('filter-magasin');
+    const selProd = document.getElementById('filter-produit');
+    const selPer  = document.getElementById('filter-periode');
+    if ([...selMag.options].some(o => o.value === savedMag))   selMag.value  = savedMag;
+    if ([...selProd.options].some(o => o.value === savedProd)) selProd.value = savedProd;
+    if ([...selPer.options].some(o => o.value === savedPer))   selPer.value  = savedPer;
+
     applyFilters();
     document.getElementById('last-update').textContent = 'Mis à jour : ' + new Date().toLocaleTimeString('fr-FR');
   } catch(e) {
@@ -539,6 +553,57 @@ function renderDashboard(data) {
         </table>
       </div>
     </div>
+
+    <div class="card" style="margin-top:24px;margin-bottom:24px">
+      <div class="card-title"><span class="dot" style="background:var(--orange)"></span>Alertes &amp; Signaux</div>
+      <div class="card-subtitle">Indicateurs clés automatiques — période sélectionnée</div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Indicateur</th><th>Valeur</th><th>Magasin / Produit</th><th>Statut</th>
+          </tr></thead>
+          <tbody>
+            ${(function() {
+              if (magasins.length === 0) return '<tr><td colspan="4" style="text-align:center;color:#888">Aucune donnée sur la période</td></tr>';
+
+              const tauxByMag = {};
+              magasins.forEach(m => {
+                const s = stockByMag[m] || 0;
+                tauxByMag[m] = s > 0 ? (ventesByMag[m] || 0) / s * 100 : 0;
+              });
+              const tauxByProd = {};
+              produits.forEach(p => {
+                const s = aggBy(data,'Produit','Stock')[p] || 0;
+                tauxByProd[p] = s > 0 ? (ventesByProd[p] || 0) / s * 100 : 0;
+              });
+
+              const bestMag   = magasins[0];
+              const worstMag  = [...magasins].sort((a,b) => (pertesByMag[b]||0)-(pertesByMag[a]||0))[0];
+              const bestTaux  = [...magasins].sort((a,b) => tauxByMag[b]-tauxByMag[a])[0];
+              const worstTaux = [...magasins].filter(m=>tauxByMag[m]>0).sort((a,b)=>tauxByMag[a]-tauxByMag[b])[0] || magasins[magasins.length-1];
+              const bestProd  = produits[0];
+              const worstProd = [...produits].sort((a,b)=>(pertesByProd[b]||0)-(pertesByProd[a]||0))[0];
+
+              const alerts = [
+                ['🏆 Magasin le + performant', (ventesByMag[bestMag]||0).toLocaleString('fr-FR') + ' ventes', bestMag, '<span class="badge badge-green">✅ Top performer</span>'],
+                ['⚠️ Magasin avec le + de pertes', (pertesByMag[worstMag]||0).toLocaleString('fr-FR') + ' pertes', worstMag, '<span class="badge badge-orange">⚠️ À surveiller</span>'],
+                ['📈 Meilleur taux d\'écoulement', tauxByMag[bestTaux].toFixed(1) + '%', bestTaux, '<span class="badge badge-green">✅ Excellent</span>'],
+                ['📉 Plus faible taux d\'écoulement', tauxByMag[worstTaux].toFixed(1) + '%', worstTaux, '<span class="badge badge-orange">⚠️ À surveiller</span>'],
+                ['🥇 Produit le plus vendu', (ventesByProd[bestProd]||0).toLocaleString('fr-FR') + ' ventes', bestProd, '<span class="badge badge-green">🏆 Best-seller</span>'],
+                ['⚠️ Produit avec le + de pertes', (pertesByProd[worstProd]||0).toLocaleString('fr-FR') + ' pertes', worstProd, '<span class="badge badge-orange">⚠️ À surveiller</span>'],
+              ];
+
+              return alerts.map((a,i) => `<tr>
+                <td style="font-size:13px">${a[0]}</td>
+                <td><strong>${a[1]}</strong></td>
+                <td><strong>${a[2]}</strong></td>
+                <td>${a[3]}</td>
+              </tr>`).join('');
+            })()}
+          </tbody>
+        </table>
+      </div>
+    </div>
   `;
 
   // CHART — Ventes par magasin
@@ -635,7 +700,7 @@ function destroyChart(id) {
 
 // Auto-refresh toutes les 5 minutes
 loadData();
-setInterval(loadData, 5 * 60 * 1000);
+// Mise à jour automatique désactivée — utilisez le bouton Actualiser
 </script>
 </body>
 </html>
