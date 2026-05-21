@@ -497,17 +497,42 @@ function renderDashboard(data) {
   // Weekly evolution
   const weeklyVentes = {};
   const weeklyPertes = {};
+  const weeklyLabels = {};
+  function getMonday(d) {
+    const c = new Date(d);
+    const day = c.getDay();
+    c.setDate(c.getDate() - day + (day === 0 ? -6 : 1));
+    return c;
+  }
+  function isoKey(d) {
+    return d.getFullYear() + '-'
+      + String(d.getMonth() + 1).padStart(2, '0') + '-'
+      + String(d.getDate()).padStart(2, '0');
+  }
   data.forEach(r => {
     const d = new Date(r.Date);
     if (isNaN(d)) return;
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(d.setDate(diff));
-    const key = monday.toLocaleDateString('fr-FR', {day:'2-digit', month:'short'});
+    const monday = getMonday(d);
+    const key   = isoKey(monday);
+    const label = monday.toLocaleDateString('fr-FR', {day:'2-digit', month:'short'});
     weeklyVentes[key] = (weeklyVentes[key] || 0) + r.Vente;
     weeklyPertes[key] = (weeklyPertes[key] || 0) + r.Perte;
+    weeklyLabels[key] = label;
   });
-  const weeks = Object.keys(weeklyVentes).sort();
+
+  // Bornes de l'axe = plage du filtre (ou étendue des données si pas de filtre)
+  const existingKeys = Object.keys(weeklyVentes).sort();
+  const firstMonday = dateStart ? getMonday(new Date(dateStart)) : new Date(existingKeys[0]);
+  const lastMonday  = dateEnd   ? getMonday(new Date(dateEnd))   : new Date(existingKeys[existingKeys.length - 1]);
+
+  const weeks = [];
+  const cur = new Date(firstMonday);
+  while (isoKey(cur) <= isoKey(lastMonday)) {
+    const k = isoKey(cur);
+    if (!weeklyLabels[k]) weeklyLabels[k] = new Date(cur).toLocaleDateString('fr-FR', {day:'2-digit', month:'short'});
+    weeks.push(k);
+    cur.setDate(cur.getDate() + 7);
+  }
 
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid">
@@ -708,7 +733,7 @@ function renderDashboard(data) {
   charts['chartEvolution'] = new Chart(document.getElementById('chartEvolution'), {
     type: 'line',
     data: {
-      labels: weeks,
+      labels: weeks.map(w => weeklyLabels[w]),
       datasets: [
         {
           label: 'Ventes', data: weeks.map(w => weeklyVentes[w] || 0),
