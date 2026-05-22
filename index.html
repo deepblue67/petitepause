@@ -522,9 +522,11 @@ function renderDashboard(data) {
   });
 
   // Bornes de l'axe = plage du filtre (ou étendue des données si pas de filtre)
+  const _dateStart = document.getElementById('filter-date-start').value;
+  const _dateEnd   = document.getElementById('filter-date-end').value;
   const existingKeys = Object.keys(weeklyVentes).sort();
-  const firstMonday = dateStart ? getMonday(new Date(dateStart)) : new Date(existingKeys[0]);
-  const lastMonday  = dateEnd   ? getMonday(new Date(dateEnd))   : new Date(existingKeys[existingKeys.length - 1]);
+  const firstMonday = _dateStart ? getMonday(new Date(_dateStart)) : new Date(existingKeys[0]);
+  const lastMonday  = _dateEnd   ? getMonday(new Date(_dateEnd))   : new Date(existingKeys[existingKeys.length - 1]);
 
   const weeks = [];
   const cur = new Date(firstMonday);
