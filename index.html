@@ -67,6 +67,30 @@
       background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px;
     }
     .filter-group select:focus { border-color: var(--green-mid); }
+    .multiselect { position: relative; }
+    .multiselect-btn {
+      border: 1.5px solid var(--border); border-radius: 8px; padding: 7px 30px 7px 12px;
+      font-size: 13px; font-family: inherit; color: var(--text); background: #fff;
+      cursor: pointer; outline: none; transition: border-color .2s; text-align: left;
+      white-space: nowrap; min-width: 160px;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%235A7A65' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 10px center;
+    }
+    .multiselect-btn:focus, .multiselect-btn.open { border-color: var(--green-mid); }
+    .multiselect-dropdown {
+      display: none; position: absolute; top: calc(100% + 4px); left: 0; z-index: 300;
+      background: #fff; border: 1.5px solid var(--border); border-radius: 10px;
+      box-shadow: var(--shadow-hover); min-width: 200px; padding: 6px 0;
+      max-height: 300px; overflow-y: auto;
+    }
+    .multiselect-dropdown.open { display: block; }
+    .multiselect-item {
+      display: flex; align-items: center; gap: 10px; padding: 7px 14px;
+      cursor: pointer; font-size: 13px; transition: background .12s; user-select: none;
+    }
+    .multiselect-item:hover { background: var(--green-pale); }
+    .multiselect-item input[type=checkbox] { accent-color: var(--green-mid); width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
+    .multiselect-sep { height: 1px; background: var(--border); margin: 4px 0; }
     .filter-group input[type="date"] {
       border: 1.5px solid var(--border); border-radius: 8px; padding: 7px 10px;
       font-size: 13px; font-family: inherit; color: var(--text); background: #fff;
@@ -199,15 +223,21 @@
   <div class="filter-sep"></div>
   <div class="filter-group">
     <span class="filter-label">Magasin</span>
-    <select id="filter-magasin" onchange="applyFilters()">
-      <option value="Tous">Tous les magasins</option>
-    </select>
+    <div class="multiselect" id="ms-magasin">
+      <button class="multiselect-btn" onclick="toggleDropdown('ms-magasin')">
+        <span id="ms-magasin-label">Tous les magasins</span>
+      </button>
+      <div class="multiselect-dropdown" id="ms-magasin-list"></div>
+    </div>
   </div>
   <div class="filter-group">
     <span class="filter-label">Produit</span>
-    <select id="filter-produit" onchange="applyFilters()">
-      <option value="Tous">Tous les produits</option>
-    </select>
+    <div class="multiselect" id="ms-produit">
+      <button class="multiselect-btn" onclick="toggleDropdown('ms-produit')">
+        <span id="ms-produit-label">Tous les produits</span>
+      </button>
+      <div class="multiselect-dropdown" id="ms-produit-list"></div>
+    </div>
   </div>
   <div class="filter-group">
     <span class="filter-label">Du</span>
@@ -313,21 +343,19 @@ const SCRIPT_CODE = `function doGet(e) {
 async function loadData() {
   try {
     // Sauvegarder les filtres actifs avant rechargement
-    const savedMag       = document.getElementById('filter-magasin')?.value || 'Tous';
-    const savedProd      = document.getElementById('filter-produit')?.value || 'Tous';
+    const savedMags      = getChecked('ms-magasin');
+    const savedProds     = getChecked('ms-produit');
     const savedDateStart = document.getElementById('filter-date-start')?.value || '';
     const savedDateEnd   = document.getElementById('filter-date-end')?.value   || '';
 
     document.getElementById('last-update').textContent = 'Actualisation…';
     const text = await fetchCSV();
     rawData = parseCSV(text);
-    populateFilters();
+    populateFilters(
+      savedMags.length  ? savedMags  : null,
+      savedProds.length ? savedProds : null
+    );
 
-    // Restaurer les filtres
-    const selMag  = document.getElementById('filter-magasin');
-    const selProd = document.getElementById('filter-produit');
-    if ([...selMag.options].some(o => o.value === savedMag))   selMag.value  = savedMag;
-    if ([...selProd.options].some(o => o.value === savedProd)) selProd.value = savedProd;
     if (savedDateStart) document.getElementById('filter-date-start').value = savedDateStart;
     if (savedDateEnd)   document.getElementById('filter-date-end').value   = savedDateEnd;
 
@@ -416,18 +444,13 @@ function initDateFilters() {
   document.getElementById('filter-date-end').value   = toIso(friday);
 }
 
-function populateFilters() {
+function populateFilters(savedMags, savedProds) {
   const magasins = [...new Set(rawData.map(r => r.Franchise))].sort();
   const produits = [...new Set(rawData.map(r => r.Produit))].sort();
 
-  const selMag  = document.getElementById('filter-magasin');
-  const selProd = document.getElementById('filter-produit');
-  selMag.innerHTML  = '<option value="Tous">Tous les magasins</option>' +
-    magasins.map(m => `<option value="${m}">${m}</option>`).join('');
-  selProd.innerHTML = '<option value="Tous">Tous les produits</option>' +
-    produits.map(p => `<option value="${p}">${p}</option>`).join('');
+  buildMultiselect('ms-magasin', magasins, 'Tous les magasins', savedMags);
+  buildMultiselect('ms-produit', produits, 'Tous les produits', savedProds);
 
-  // Bornes min/max issues des données
   const dates = rawData.map(r => new Date(r.Date)).filter(d => !isNaN(d));
   if (dates.length) {
     const minDate = toIso(new Date(Math.min(...dates)));
@@ -436,11 +459,68 @@ function populateFilters() {
     const inEnd   = document.getElementById('filter-date-end');
     inStart.min = minDate;  inStart.max = maxDate;
     inEnd.min   = minDate;  inEnd.max   = maxDate;
-    // Ne réinitialise les valeurs que si elles sont vides
     if (!inStart.value) inStart.value = minDate;
     if (!inEnd.value)   inEnd.value   = maxDate;
   }
 }
+
+function buildMultiselect(id, items, allLabel, preselected) {
+  const list = document.getElementById(id + '-list');
+  list.innerHTML =
+    `<label class="multiselect-item">
+       <input type="checkbox" id="${id}-all" onchange="toggleAll('${id}','${allLabel}')"> Tous
+     </label>
+     <div class="multiselect-sep"></div>` +
+    items.map(item => {
+      const checked = !preselected || preselected.includes(item) ? 'checked' : '';
+      return `<label class="multiselect-item">
+        <input type="checkbox" class="${id}-item" value="${item}" ${checked}
+               onchange="updateMultiselectLabel('${id}','${allLabel}')"> ${item}
+      </label>`;
+    }).join('');
+  updateMultiselectLabel(id, allLabel);
+}
+
+function toggleAll(id, allLabel) {
+  const allCb = document.getElementById(id + '-all');
+  document.querySelectorAll('.' + id + '-item').forEach(cb => cb.checked = allCb.checked);
+  updateMultiselectLabel(id, allLabel);
+  applyFilters();
+}
+
+function updateMultiselectLabel(id, allLabel) {
+  const items   = [...document.querySelectorAll('.' + id + '-item')];
+  const checked = items.filter(cb => cb.checked);
+  const allCb   = document.getElementById(id + '-all');
+  if (checked.length === items.length) {
+    allCb.checked = true; allCb.indeterminate = false;
+    document.getElementById(id + '-label').textContent = allLabel;
+  } else if (checked.length === 0) {
+    allCb.checked = false; allCb.indeterminate = false;
+    document.getElementById(id + '-label').textContent = 'Aucun';
+  } else {
+    allCb.indeterminate = true;
+    document.getElementById(id + '-label').textContent = checked.length + ' sélectionné' + (checked.length > 1 ? 's' : '');
+  }
+  applyFilters();
+}
+
+function toggleDropdown(id) {
+  document.querySelectorAll('.multiselect-dropdown').forEach(d => {
+    if (d.id !== id + '-list') d.classList.remove('open');
+  });
+  document.getElementById(id + '-list').classList.toggle('open');
+  document.querySelectorAll('.multiselect-btn').forEach(b => b.classList.remove('open'));
+  const btn = document.getElementById(id + '-list').previousElementSibling;
+  if (document.getElementById(id + '-list').classList.contains('open')) btn.classList.add('open');
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.multiselect')) {
+    document.querySelectorAll('.multiselect-dropdown').forEach(d => d.classList.remove('open'));
+    document.querySelectorAll('.multiselect-btn').forEach(b => b.classList.remove('open'));
+  }
+});
 
 function resetDates() {
   const dates = rawData.map(r => new Date(r.Date)).filter(d => !isNaN(d));
@@ -450,17 +530,21 @@ function resetDates() {
   applyFilters();
 }
 
+function getChecked(id) {
+  return [...document.querySelectorAll('.' + id + '-item:checked')].map(cb => cb.value);
+}
+
 function applyFilters() {
-  const mag       = document.getElementById('filter-magasin').value;
-  const prod      = document.getElementById('filter-produit').value;
+  const mags      = getChecked('ms-magasin');
+  const prods     = getChecked('ms-produit');
   const dateStart = document.getElementById('filter-date-start').value;
   const dateEnd   = document.getElementById('filter-date-end').value;
   const tsStart   = dateStart ? new Date(dateStart).getTime() : null;
   const tsEnd     = dateEnd   ? new Date(dateEnd).getTime() + 86399999 : null;
 
   let data = rawData.filter(r => {
-    if (mag  !== 'Tous' && r.Franchise !== mag)  return false;
-    if (prod !== 'Tous' && r.Produit   !== prod) return false;
+    if (mags.length  && !mags.includes(r.Franchise))  return false;
+    if (prods.length && !prods.includes(r.Produit))   return false;
     const ts = new Date(r.Date).getTime();
     if (tsStart && ts < tsStart) return false;
     if (tsEnd   && ts > tsEnd)   return false;
