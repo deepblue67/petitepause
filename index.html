@@ -193,12 +193,29 @@
       border-top: 1px solid var(--border); margin-top: 8px;
     }
 
+    /* ACTIVE FILTERS BAR */
+    .active-filters-bar {
+      background: var(--green-pale); border-bottom: 1px solid var(--border);
+      padding: 7px 32px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      font-size: 12px;
+    }
+    .active-filters-bar.hidden { display: none; }
+    .active-filter-section { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .active-filter-prefix { color: var(--text-light); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; }
+    .active-filter-tag {
+      display: inline-flex; align-items: center;
+      padding: 3px 10px; border-radius: 99px;
+      font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap;
+    }
+    .active-filter-sep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; }
+
     @media (max-width: 900px) {
       main { padding: 16px; }
       .kpi-grid { grid-template-columns: repeat(2,1fr); }
       .charts-row, .charts-row-3 { grid-template-columns: 1fr; }
       header { padding: 0 16px; }
       .filters-bar { padding: 12px 16px; }
+      .active-filters-bar { padding: 7px 16px; }
     }
   </style>
 </head>
@@ -209,7 +226,7 @@
     <div class="header-logo">🥗</div>
     <div class="header-title">
       <h1>La Petite Pause</h1>
-      <p>Dashboard Analytique — Réseau de franchises</p>
+      <p>Dashboard Analytique</p>
     </div>
   </div>
   <div class="header-right">
@@ -249,6 +266,8 @@
   </div>
 </div>
 
+<div class="active-filters-bar hidden" id="active-filters-bar"></div>
+
 <main>
   <div id="content">
     <div class="loading"><div class="spinner"></div><span>Chargement des données…</span></div>
@@ -266,12 +285,14 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyDqicU_NwYNbyi
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/1bHK0dRN5A_ELfqCTOFa5fpdSZlqAO9P-VwUb06gZLLc/gviz/tq?tqx=out:csv&sheet=DATA';
 // ─────────────────────────────────────────────────────────────────────────────
 
+const MAGASIN_ORDER = ['LINGOLSHEIM','STRASBOURG','ECKBOLSHEIM','SCHILTIGHEIM','ILLKIRCH'];
+
 const COLORS = {
-  ECKBOLSHEIM:  '#2D6A4F',
-  ILLKIRCH:     '#52B788',
   LINGOLSHEIM:  '#F4A261',
   STRASBOURG:   '#E76F51',
+  ECKBOLSHEIM:  '#2D6A4F',
   SCHILTIGHEIM: '#F9C74F',
+  ILLKIRCH:     '#52B788',
 };
 const PRODUCT_COLORS = ['#2D6A4F','#52B788','#74C69D','#F4A261','#E76F51','#9B72CF'];
 
@@ -445,7 +466,9 @@ function initDateFilters() {
 }
 
 function populateFilters(savedMags, savedProds) {
-  const magasins = [...new Set(rawData.map(r => r.Franchise))].sort();
+  const allMags  = [...new Set(rawData.map(r => r.Franchise))];
+  const magasins = MAGASIN_ORDER.filter(m => allMags.includes(m))
+    .concat(allMags.filter(m => !MAGASIN_ORDER.includes(m)).sort());
   const produits = [...new Set(rawData.map(r => r.Produit))].sort();
 
   buildMultiselect('ms-magasin', magasins, 'Tous les magasins', savedMags);
@@ -534,6 +557,45 @@ function getChecked(id) {
   return [...document.querySelectorAll('.' + id + '-item:checked')].map(cb => cb.value);
 }
 
+function updateActiveFiltersBar() {
+  const bar  = document.getElementById('active-filters-bar');
+  if (!bar) return;
+
+  const mags     = getChecked('ms-magasin');
+  const prods    = getChecked('ms-produit');
+  const allMags  = [...document.querySelectorAll('.ms-magasin-item')].map(cb => cb.value);
+  const allProds = [...document.querySelectorAll('.ms-produit-item')].map(cb => cb.value);
+
+  const magsActive  = mags.length > 0 && mags.length < allMags.length;
+  const prodsActive = prods.length > 0 && prods.length < allProds.length;
+
+  if (!magsActive && !prodsActive) {
+    bar.classList.add('hidden');
+    bar.innerHTML = '';
+    return;
+  }
+
+  let html = '';
+  if (magsActive) {
+    html += '<div class="active-filter-section"><span class="active-filter-prefix">Magasins :</span>';
+    html += mags.map(m =>
+      `<span class="active-filter-tag" style="background:${COLORS[m] || 'var(--green-mid)'}">${m}</span>`
+    ).join('');
+    html += '</div>';
+  }
+  if (magsActive && prodsActive) html += '<div class="active-filter-sep"></div>';
+  if (prodsActive) {
+    html += '<div class="active-filter-section"><span class="active-filter-prefix">Produits :</span>';
+    html += prods.map(p =>
+      `<span class="active-filter-tag" style="background:var(--orange-light)">${p}</span>`
+    ).join('');
+    html += '</div>';
+  }
+
+  bar.innerHTML = html;
+  bar.classList.remove('hidden');
+}
+
 function applyFilters() {
   const mags      = getChecked('ms-magasin');
   const prods     = getChecked('ms-produit');
@@ -552,6 +614,7 @@ function applyFilters() {
   });
 
   renderDashboard(data);
+  updateActiveFiltersBar();
 }
 
 function agg(data, key) { return data.reduce((s,r) => s + r[key], 0); }
